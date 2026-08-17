@@ -1,8 +1,10 @@
 import { SymbolView } from 'expo-symbols';
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { AddFoodEntrySheet, type AddFoodEntrySheetRef, type MealType } from '@/components/add-food-entry-sheet';
+import { MealDetailSheet, type MealDetailSheetRef } from '@/components/meal-detail-sheet';
 import { ProgressRing } from '@/components/progress-ring';
 import { ThemedText } from '@/components/themed-text';
 import {
@@ -14,40 +16,52 @@ import {
   Spacing,
 } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useNutritionTracker } from '@/hooks/use-nutrition-tracker';
+import { useWaterTracker } from '@/hooks/use-water-tracker';
 
 type Macro = { label: string; value: number; goal: number; unit: string };
 
-const CALORIE_GOAL = 2000;
-const CALORIES_EATEN = 1240;
 const CALORIES_BURNED = 180;
-const CALORIES_REMAINING = Math.max(0, CALORIE_GOAL - CALORIES_EATEN + CALORIES_BURNED);
 
-const MACROS: Macro[] = [
-  { label: 'Carbs', value: 118, goal: 230, unit: 'g' },
-  { label: 'Protein', value: 54, goal: 115, unit: 'g' },
-  { label: 'Fat', value: 38, goal: 65, unit: 'g' },
+type MealConfig = { name: string; mealType: MealType; icon: string; goal: number; note?: string };
+
+const MEAL_CONFIG: MealConfig[] = [
+  { name: 'Breakfast', mealType: 'breakfast', icon: '☕', goal: 500, note: 'Oatmeal with berries' },
+  { name: 'Lunch', mealType: 'lunch', icon: '🥗', goal: 650, note: 'Grilled chicken salad' },
+  { name: 'Dinner', mealType: 'dinner', icon: '⏳', goal: 650 },
+  { name: 'Snacks', mealType: 'snack', icon: '⏳', goal: 200 },
 ];
 
-type Meal = { name: string; icon: string; eaten: number; goal: number; note?: string };
-
-const MEALS: Meal[] = [
-  { name: 'Breakfast', icon: '☕', eaten: 320, goal: 500, note: 'Oatmeal with berries' },
-  { name: 'Lunch', icon: '🥗', eaten: 540, goal: 650, note: 'Grilled chicken salad' },
-  { name: 'Dinner', icon: '⏳', eaten: 0, goal: 650 },
-  { name: 'Snacks', icon: '⏳', eaten: 0, goal: 200 },
-];
-
-const WATER_GOAL_LITERS = 2.5;
-const WATER_LITERS = 1.8;
 const WATER_COLUMNS = 6;
 const WATER_CELL_COUNT = 12;
-const WATER_FILLED_COUNT = Math.round((WATER_LITERS / WATER_GOAL_LITERS) * WATER_CELL_COUNT);
 const WATER_ROWS = Array.from({ length: Math.ceil(WATER_CELL_COUNT / WATER_COLUMNS) }, (_, row) =>
   Array.from({ length: WATER_COLUMNS }, (_, col) => row * WATER_COLUMNS + col)
 );
 
 export default function DiaryScreen() {
   const theme = useTheme();
+  const addFoodSheetRef = useRef<AddFoodEntrySheetRef>(null);
+  const mealDetailSheetRef = useRef<MealDetailSheetRef>(null);
+  const nutrition = useNutritionTracker();
+  const caloriesRemaining = Math.max(
+    0,
+    nutrition.calorieGoal - nutrition.caloriesEaten + CALORIES_BURNED
+  );
+  const macros: Macro[] = [
+    { label: 'Carbs', value: nutrition.carbs.value, goal: nutrition.carbs.goal, unit: 'g' },
+    { label: 'Protein', value: nutrition.protein.value, goal: nutrition.protein.goal, unit: 'g' },
+    { label: 'Fat', value: nutrition.fat.value, goal: nutrition.fat.goal, unit: 'g' },
+  ];
+  const meals = MEAL_CONFIG.map((meal) => ({
+    ...meal,
+    eaten: nutrition.mealTotals[meal.mealType],
+  }));
+  const { goalMl, consumedMl, addWater } = useWaterTracker();
+  const waterCellMl = Math.max(1, Math.round(goalMl / WATER_CELL_COUNT));
+  const waterFilledCount = Math.min(
+    WATER_CELL_COUNT,
+    Math.round((consumedMl / goalMl) * WATER_CELL_COUNT)
+  );
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     ...safeAreaInsets,
@@ -84,15 +98,15 @@ export default function DiaryScreen() {
                 Shadows.soft,
               ]}>
               <View style={styles.overviewRow}>
-                <OverviewStat value={String(CALORIES_EATEN)} label="Eaten" />
+                <OverviewStat value={String(nutrition.caloriesEaten)} label="Eaten" />
 
                 <ProgressRing
                   size={128}
                   strokeWidth={8}
-                  progress={CALORIES_EATEN / (CALORIE_GOAL + CALORIES_BURNED)}
+                  progress={nutrition.caloriesEaten / (nutrition.calorieGoal + CALORIES_BURNED)}
                   trackColor={theme.surfaceContainerHighest}
                   progressColor={theme.secondaryFixedDim}>
-                  <ThemedText style={styles.ringValue}>{CALORIES_REMAINING}</ThemedText>
+                  <ThemedText style={styles.ringValue}>{caloriesRemaining}</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     Remaining
                   </ThemedText>
@@ -102,12 +116,13 @@ export default function DiaryScreen() {
               </View>
 
               <View style={styles.macrosRow}>
-                {MACROS.map((macro) => (
+                {macros.map((macro) => (
                   <MacroBar key={macro.label} macro={macro} />
                 ))}
               </View>
 
               <Pressable
+                onPress={() => addFoodSheetRef.current?.present()}
                 style={({ pressed }) => [
                   styles.ctaBanner,
                   { backgroundColor: theme.secondaryContainer },
@@ -129,8 +144,14 @@ export default function DiaryScreen() {
                 { backgroundColor: theme.surfaceContainerLowest },
                 Shadows.soft,
               ]}>
-              {MEALS.map((meal, index) => (
-                <MealRow key={meal.name} meal={meal} isLast={index === MEALS.length - 1} />
+              {meals.map((meal, index) => (
+                <MealRow
+                  key={meal.name}
+                  meal={meal}
+                  isLast={index === meals.length - 1}
+                  onPress={() => mealDetailSheetRef.current?.present(meal)}
+                  onAdd={() => addFoodSheetRef.current?.present(meal.mealType)}
+                />
               ))}
             </View>
           </Section>
@@ -145,10 +166,10 @@ export default function DiaryScreen() {
               ]}>
               <ThemedText type="headlineMd">Water</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.waterGoal}>
-                Goal: {WATER_GOAL_LITERS.toFixed(2)} liters
+                Goal: {(goalMl / 1000).toFixed(2)} liters
               </ThemedText>
               <ThemedText type="displayLg" style={styles.waterValue}>
-                {WATER_LITERS.toFixed(2)} L
+                {(consumedMl / 1000).toFixed(2)} L
               </ThemedText>
 
               <View style={styles.waterGrid}>
@@ -157,9 +178,10 @@ export default function DiaryScreen() {
                     {row.map((index) => (
                       <WaterGlass
                         key={index}
-                        filled={index < WATER_FILLED_COUNT}
-                        showCheck={index === WATER_FILLED_COUNT - 1}
-                        showAdd={index === WATER_FILLED_COUNT}
+                        filled={index < waterFilledCount}
+                        showCheck={index === waterFilledCount - 1}
+                        showAdd={index === waterFilledCount}
+                        onPress={() => addWater(waterCellMl)}
                       />
                     ))}
                   </View>
@@ -168,7 +190,7 @@ export default function DiaryScreen() {
 
               <View style={[styles.waterFooter, { borderTopColor: theme.outlineVariant }]}>
                 <ThemedText type="small" themeColor="textSecondary">
-                  + Water from food: 120 ml
+                  Tap a glass to log {waterCellMl} ml
                 </ThemedText>
               </View>
             </View>
@@ -248,6 +270,7 @@ export default function DiaryScreen() {
       </ScrollView>
 
       <Pressable
+        onPress={() => addFoodSheetRef.current?.present()}
         style={({ pressed }) => [
           styles.fab,
           { backgroundColor: theme.primary, bottom: insets.bottom },
@@ -260,6 +283,9 @@ export default function DiaryScreen() {
           tintColor={theme.onPrimary}
         />
       </Pressable>
+
+      <AddFoodEntrySheet ref={addFoodSheetRef} onEntryAdded={nutrition.refresh} />
+      <MealDetailSheet ref={mealDetailSheetRef} onEntryRemoved={nutrition.refresh} />
     </View>
   );
 }
@@ -365,16 +391,28 @@ function MacroBar({ macro }: { macro: Macro }) {
   );
 }
 
-function MealRow({ meal, isLast }: { meal: Meal; isLast: boolean }) {
+function MealRow({
+  meal,
+  isLast,
+  onPress,
+  onAdd,
+}: {
+  meal: MealConfig & { eaten: number };
+  isLast: boolean;
+  onPress: () => void;
+  onAdd: () => void;
+}) {
   const theme = useTheme();
   const isLogged = meal.eaten > 0;
   const progress = meal.goal > 0 ? meal.eaten / meal.goal : 0;
 
   return (
-    <View
-      style={[
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.mealRow,
         !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.outlineVariant },
+        pressed && styles.pressed,
       ]}>
       <ProgressRing
         size={56}
@@ -400,6 +438,10 @@ function MealRow({ meal, isLast }: { meal: Meal; isLast: boolean }) {
       </View>
 
       <Pressable
+        onPress={(event) => {
+          event.stopPropagation();
+          onAdd();
+        }}
         style={({ pressed }) => [
           styles.mealAddButton,
           {
@@ -413,7 +455,7 @@ function MealRow({ meal, isLast }: { meal: Meal; isLast: boolean }) {
           tintColor={isLogged ? theme.onPrimary : theme.textSecondary}
         />
       </Pressable>
-    </View>
+    </Pressable>
   );
 }
 
@@ -421,16 +463,19 @@ function WaterGlass({
   filled,
   showCheck,
   showAdd,
+  onPress,
 }: {
   filled: boolean;
   showCheck: boolean;
   showAdd: boolean;
+  onPress: () => void;
 }) {
   const theme = useTheme();
 
   return (
-    <View
-      style={[
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
         styles.waterGlass,
         filled
           ? { backgroundColor: theme.primaryContainer }
@@ -439,6 +484,7 @@ function WaterGlass({
               borderWidth: 2,
               borderColor: theme.surfaceContainerHighest,
             },
+        pressed && styles.pressed,
       ]}>
       {showCheck ? (
         <View style={[styles.waterGlassBadge, { backgroundColor: theme.secondary }]}>
@@ -456,7 +502,7 @@ function WaterGlass({
           tintColor={theme.outline}
         />
       ) : null}
-    </View>
+    </Pressable>
   );
 }
 

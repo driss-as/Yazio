@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -13,36 +14,25 @@ import {
   Shadows,
   Spacing,
 } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
+import { useBodyMetrics } from '@/hooks/use-body-metrics';
 import { useTheme } from '@/hooks/use-theme';
-
-const USER_NAME = 'Jordan Lee';
-const USER_HANDLE = 'jordan.lee@example.com';
-
-const START_WEIGHT_KG = 85;
-const CURRENT_WEIGHT_KG = 78.4;
-const TARGET_WEIGHT_KG = 72;
-const HEIGHT_CM = 178;
-const BMI = CURRENT_WEIGHT_KG / (HEIGHT_CM / 100) ** 2;
-
-const WEIGHT_PROGRESS = Math.min(
-  1,
-  Math.max(0, (START_WEIGHT_KG - CURRENT_WEIGHT_KG) / (START_WEIGHT_KG - TARGET_WEIGHT_KG))
-);
 
 type Stat = { label: string; value: string; unit?: string };
 
-const STATS: Stat[] = [
-  { label: 'Height', value: HEIGHT_CM.toString(), unit: 'cm' },
-  { label: 'Weight', value: CURRENT_WEIGHT_KG.toFixed(1), unit: 'kg' },
-  { label: 'Target', value: TARGET_WEIGHT_KG.toString(), unit: 'kg' },
-  { label: 'BMI', value: BMI.toFixed(1) },
-];
-
-type SettingsItem = { label: string; icon: SymbolViewProps['name'] };
+type SettingsItem = { label: string; icon: SymbolViewProps['name']; onPress?: () => void };
 
 const ACCOUNT_ITEMS: SettingsItem[] = [
-  { label: 'Personal details', icon: { ios: 'person.text.rectangle', android: 'badge', web: 'badge' } },
-  { label: 'Goals & nutrition', icon: { ios: 'target', android: 'track_changes', web: 'track_changes' } },
+  {
+    label: 'Personal details',
+    icon: { ios: 'person.text.rectangle', android: 'badge', web: 'badge' },
+    onPress: () => router.push('/personal-details'),
+  },
+  {
+    label: 'Goals & nutrition',
+    icon: { ios: 'target', android: 'track_changes', web: 'track_changes' },
+    onPress: () => router.push('/goals-nutrition'),
+  },
   { label: 'Units & measurements', icon: { ios: 'ruler', android: 'straighten', web: 'straighten' } },
 ];
 
@@ -67,6 +57,23 @@ const APP_ITEMS: SettingsItem[] = [
 
 export default function ProfileScreen() {
   const theme = useTheme();
+  const { signOut } = useAuth();
+  const metrics = useBodyMetrics();
+  const bmi = metrics.currentWeightKg / (metrics.heightCm / 100) ** 2;
+  const weightProgress = Math.min(
+    1,
+    Math.max(
+      0,
+      (metrics.startWeightKg - metrics.currentWeightKg) /
+        (metrics.startWeightKg - metrics.targetWeightKg)
+    )
+  );
+  const stats: Stat[] = [
+    { label: 'Height', value: metrics.heightCm.toString(), unit: 'cm' },
+    { label: 'Weight', value: metrics.currentWeightKg.toFixed(1), unit: 'kg' },
+    { label: 'Target', value: metrics.targetWeightKg.toString(), unit: 'kg' },
+    { label: 'BMI', value: bmi.toFixed(1) },
+  ];
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     ...safeAreaInsets,
@@ -106,11 +113,11 @@ export default function ProfileScreen() {
               <ProgressRing
                 size={104}
                 strokeWidth={8}
-                progress={WEIGHT_PROGRESS}
+                progress={weightProgress}
                 trackColor={theme.surfaceContainerHighest}
                 progressColor={theme.primary}>
                 <ThemedText style={styles.ringValue}>
-                  {Math.round(WEIGHT_PROGRESS * 100)}%
+                  {Math.round(weightProgress * 100)}%
                 </ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">
                   to goal
@@ -120,31 +127,31 @@ export default function ProfileScreen() {
               <View style={styles.weightInfo}>
                 <ThemedText type="headlineMd">Weight goal</ThemedText>
                 <ThemedText type="bodyMd" themeColor="textSecondary" style={styles.weightSubtitle}>
-                  {CURRENT_WEIGHT_KG.toFixed(1)} kg now · {TARGET_WEIGHT_KG} kg target
+                  {metrics.currentWeightKg.toFixed(1)} kg now · {metrics.targetWeightKg} kg target
                 </ThemedText>
 
                 <View style={[styles.weightTrack, { backgroundColor: theme.surfaceContainerHighest }]}>
                   <View
                     style={[
                       styles.weightFill,
-                      { backgroundColor: theme.primary, width: `${WEIGHT_PROGRESS * 100}%` },
+                      { backgroundColor: theme.primary, width: `${weightProgress * 100}%` },
                     ]}
                   />
                 </View>
 
                 <View style={styles.weightRange}>
                   <ThemedText type="labelMd" themeColor="textSecondary">
-                    Start {START_WEIGHT_KG} kg
+                    Start {metrics.startWeightKg} kg
                   </ThemedText>
                   <ThemedText type="labelMd" themeColor="textSecondary">
-                    Goal {TARGET_WEIGHT_KG} kg
+                    Goal {metrics.targetWeightKg} kg
                   </ThemedText>
                 </View>
               </View>
             </View>
 
             <View style={styles.statsRow}>
-              {STATS.map((stat) => (
+              {stats.map((stat) => (
                 <StatCard key={stat.label} stat={stat} />
               ))}
             </View>
@@ -179,6 +186,7 @@ export default function ProfileScreen() {
           </Section>
 
           <Pressable
+            onPress={signOut}
             style={({ pressed }) => [
               styles.logoutButton,
               { borderColor: theme.error },
@@ -205,9 +213,10 @@ export default function ProfileScreen() {
 
 function Header() {
   const theme = useTheme();
-  const initials = USER_NAME.split(' ')
-    .map((part) => part[0])
-    .join('');
+  const { session } = useAuth();
+  const email = session?.user.email ?? '';
+  const displayName = email.split('@')[0] || 'Account';
+  const initials = (email[0] ?? '?').toUpperCase();
 
   return (
     <View style={styles.header}>
@@ -218,9 +227,9 @@ function Header() {
       </View>
 
       <View style={styles.headerInfo}>
-        <ThemedText type="headlineLgMobile">{USER_NAME}</ThemedText>
+        <ThemedText type="headlineLgMobile">{displayName}</ThemedText>
         <ThemedText type="small" themeColor="textSecondary">
-          {USER_HANDLE}
+          {email}
         </ThemedText>
       </View>
 
@@ -277,6 +286,7 @@ function SettingsRow({ item, isLast }: { item: SettingsItem; isLast: boolean }) 
 
   return (
     <Pressable
+      onPress={item.onPress}
       style={({ pressed }) => [
         styles.settingsRow,
         !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.outlineVariant },
