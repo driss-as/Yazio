@@ -10,8 +10,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 const TABS: { name: string; href: Href; label: string; icon: SymbolViewProps['name'] }[] = [
   { name: 'index', href: '/', label: 'Diary', icon: { web: 'book' } },
-  { name: 'fasting', href: '/fasting', label: 'Fasting', icon: { web: 'timer' } },
-  { name: 'recipes', href: '/recipes', label: 'Recipes', icon: { web: 'restaurant' } },
+  { name: 'foods', href: '/foods', label: 'Base', icon: { web: 'restaurant' } },
   { name: 'profile', href: '/profile', label: 'Profile', icon: { web: 'person' } },
 ];
 

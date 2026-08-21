@@ -21,13 +21,8 @@ export default function AppTabs() {
         <NativeTabs.Trigger.Icon sf={{ default: 'book', selected: 'book.fill' }} md="book" />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="fasting">
-        <NativeTabs.Trigger.Label>Fasting</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="timer" md="timer" />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="recipes">
-        <NativeTabs.Trigger.Label>Recipes</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="foods">
+        <NativeTabs.Trigger.Label>Base</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="fork.knife" md="restaurant" />
       </NativeTabs.Trigger>
 
