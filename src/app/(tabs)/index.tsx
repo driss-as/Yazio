@@ -1,10 +1,13 @@
+import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { SymbolView } from 'expo-symbols';
-import { useRef, type ReactNode } from 'react';
+import { useCallback, useRef, type ReactNode } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AddFoodEntrySheet, type AddFoodEntrySheetRef, type MealType } from '@/components/add-food-entry-sheet';
 import { MealDetailSheet, type MealDetailSheetRef } from '@/components/meal-detail-sheet';
+import { PhotoSourceSheet, type PhotoSourceSheetRef } from '@/components/photo-source-sheet';
 import { ProgressRing } from '@/components/progress-ring';
 import { ThemedText } from '@/components/themed-text';
 import {
@@ -15,9 +18,12 @@ import {
   Shadows,
   Spacing,
 } from '@/constants/theme';
+import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useNutritionTracker } from '@/hooks/use-nutrition-tracker';
 import { useWaterTracker } from '@/hooks/use-water-tracker';
+import { uploadMealPhoto } from '@/lib/meal-photos';
+import { supabase } from '@/lib/supabase';
 
 type Macro = { label: string; value: number; goal: number; unit: string };
 
@@ -32,6 +38,19 @@ const MEAL_CONFIG: MealConfig[] = [
   { name: 'Snacks', mealType: 'snack', icon: '⏳', goal: 200 },
 ];
 
+function todayIso() {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 10);
+}
+
+function guessMealType(): MealType {
+  const hour = new Date().getHours();
+  if (hour < 11) return 'breakfast';
+  if (hour < 15) return 'lunch';
+  if (hour < 19) return 'snack';
+  return 'dinner';
+}
+
 const WATER_COLUMNS = 6;
 const WATER_CELL_COUNT = 12;
 const WATER_ROWS = Array.from({ length: Math.ceil(WATER_CELL_COUNT / WATER_COLUMNS) }, (_, row) =>
@@ -40,9 +59,18 @@ const WATER_ROWS = Array.from({ length: Math.ceil(WATER_CELL_COUNT / WATER_COLUM
 
 export default function DiaryScreen() {
   const theme = useTheme();
+  const { session } = useAuth();
   const addFoodSheetRef = useRef<AddFoodEntrySheetRef>(null);
   const mealDetailSheetRef = useRef<MealDetailSheetRef>(null);
+  const photoSourceSheetRef = useRef<PhotoSourceSheetRef>(null);
   const nutrition = useNutritionTracker();
+
+  useFocusEffect(
+    useCallback(() => {
+      nutrition.refresh();
+    }, [nutrition.refresh])
+  );
+
   const caloriesRemaining = Math.max(
     0,
     nutrition.calorieGoal - nutrition.caloriesEaten + CALORIES_BURNED
@@ -270,6 +298,26 @@ export default function DiaryScreen() {
       </ScrollView>
 
       <Pressable
+        onPress={() => photoSourceSheetRef.current?.present()}
+        style={({ pressed }) => [
+          styles.fab,
+          styles.photoFab,
+          {
+            backgroundColor: theme.surfaceContainerLowest,
+            borderColor: theme.outlineVariant,
+            bottom: insets.bottom + 4,
+          },
+          Shadows.float,
+          pressed && styles.pressed,
+        ]}>
+        <SymbolView
+          name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
+          size={22}
+          tintColor={theme.text}
+        />
+      </Pressable>
+
+      <Pressable
         onPress={() => addFoodSheetRef.current?.present()}
         style={({ pressed }) => [
           styles.fab,
@@ -285,7 +333,42 @@ export default function DiaryScreen() {
       </Pressable>
 
       <AddFoodEntrySheet ref={addFoodSheetRef} onEntryAdded={nutrition.refresh} />
-      <MealDetailSheet ref={mealDetailSheetRef} onEntryRemoved={nutrition.refresh} />
+      <MealDetailSheet
+        ref={mealDetailSheetRef}
+        onEntryRemoved={nutrition.refresh}
+        onEditEntry={(entry) => addFoodSheetRef.current?.edit(entry)}
+      />
+      <PhotoSourceSheet
+        ref={photoSourceSheetRef}
+        onPhotoSelected={async (uri) => {
+          const userId = session?.user.id;
+          if (!userId) throw new Error('You must be signed in.');
+
+          const photoPath = await uploadMealPhoto(userId, uri);
+
+          const { data, error } = await supabase
+            .from('food_logs')
+            .insert({
+              user_id: userId,
+              logged_date: todayIso(),
+              meal_type: guessMealType(),
+              name: 'Analyzing photo…',
+              quantity_g: 100,
+              calories: 0,
+              carbs_g: 0,
+              protein_g: 0,
+              fat_g: 0,
+              photo_path: photoPath,
+            })
+            .select('id')
+            .single();
+
+          if (error || !data) throw new Error(error?.message ?? 'Could not create the entry.');
+
+          nutrition.refresh();
+          router.push({ pathname: '/meal-photo-review', params: { photoPath, logId: data.id } });
+        }}
+      />
     </View>
   );
 }
@@ -727,5 +810,11 @@ const styles = StyleSheet.create({
     borderRadius: Radii.full,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  photoFab: {
+    right: Spacing.three + 56 + Spacing.three,
+    width: 48,
+    height: 48,
+    borderWidth: StyleSheet.hairlineWidth,
   },
 });

@@ -1,9 +1,13 @@
 import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router/react-navigation';
+import { Image } from 'expo-image';
 import { SymbolView, type SymbolViewProps } from 'expo-symbols';
 import type { ReactNode } from 'react';
+import { useCallback, useRef } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { MealPhotoDetailSheet, type MealPhotoDetailSheetRef } from '@/components/meal-photo-detail-sheet';
 import { ProgressRing } from '@/components/progress-ring';
 import { ThemedText } from '@/components/themed-text';
 import {
@@ -16,6 +20,7 @@ import {
 } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useBodyMetrics } from '@/hooks/use-body-metrics';
+import { useMealPhotos } from '@/hooks/use-meal-photos';
 import { useTheme } from '@/hooks/use-theme';
 
 type Stat = { label: string; value: string; unit?: string };
@@ -59,6 +64,14 @@ export default function ProfileScreen() {
   const theme = useTheme();
   const { signOut } = useAuth();
   const metrics = useBodyMetrics();
+  const { photos, loading: photosLoading, refresh: refreshPhotos } = useMealPhotos();
+  const photoDetailSheetRef = useRef<MealPhotoDetailSheetRef>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshPhotos();
+    }, [refreshPhotos])
+  );
   const bmi = metrics.currentWeightKg / (metrics.heightCm / 100) ** 2;
   const weightProgress = Math.min(
     1,
@@ -157,6 +170,42 @@ export default function ProfileScreen() {
             </View>
           </Section>
 
+          <Section title="Meal photos">
+            {photosLoading ? (
+              <ThemedText type="bodyMd" themeColor="textSecondary">
+                Loading…
+              </ThemedText>
+            ) : photos.length === 0 ? (
+              <View
+                style={[
+                  styles.card,
+                  styles.photosEmpty,
+                  { backgroundColor: theme.surfaceContainerLowest },
+                  Shadows.soft,
+                ]}>
+                <SymbolView
+                  name={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
+                  size={24}
+                  tintColor={theme.textSecondary}
+                />
+                <ThemedText type="bodyMd" themeColor="textSecondary">
+                  Photos you add when logging food will show up here.
+                </ThemedText>
+              </View>
+            ) : (
+              <View style={styles.photosGrid}>
+                {photos.map((photo) => (
+                  <Pressable
+                    key={photo.photo_path}
+                    onPress={() => photoDetailSheetRef.current?.present(photo)}
+                    style={({ pressed }) => [styles.photoTile, pressed && styles.pressed]}>
+                    <Image source={{ uri: photo.url }} style={styles.photoTileImage} contentFit="cover" />
+                  </Pressable>
+                ))}
+              </View>
+            )}
+          </Section>
+
           <Section title="Account">
             <View
               style={[
@@ -207,6 +256,8 @@ export default function ProfileScreen() {
           </ThemedText>
         </View>
       </ScrollView>
+
+      <MealPhotoDetailSheet ref={photoDetailSheetRef} onUpdated={refreshPhotos} />
     </View>
   );
 }
@@ -402,6 +453,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: Spacing.three,
+  },
+  photosEmpty: {
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  photosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  photoTile: {
+    flexBasis: '31%',
+    flexGrow: 1,
+    aspectRatio: 1,
+  },
+  photoTileImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: Radii.md,
   },
   statCard: {
     flexGrow: 1,

@@ -3,15 +3,17 @@ import BottomSheet, {
   type BottomSheetBackdropProps,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
+import { Image } from 'expo-image';
 import { SymbolView } from 'expo-symbols';
-import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import type { MealType } from '@/components/add-food-entry-sheet';
+import type { EditableFoodEntry, MealType } from '@/components/add-food-entry-sheet';
 import { ThemedText } from '@/components/themed-text';
 import { Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { deleteMealPhoto, getMealPhotoUrl } from '@/lib/meal-photos';
 import { supabase } from '@/lib/supabase';
 
 type FoodLogEntry = {
@@ -22,6 +24,7 @@ type FoodLogEntry = {
   carbs_g: number;
   protein_g: number;
   fat_g: number;
+  photo_path: string | null;
 };
 
 export type MealDetailSheetRef = {
@@ -31,6 +34,7 @@ export type MealDetailSheetRef = {
 
 type MealDetailSheetProps = {
   onEntryRemoved?: () => void;
+  onEditEntry?: (entry: EditableFoodEntry) => void;
 };
 
 function todayIso() {
@@ -39,7 +43,7 @@ function todayIso() {
 }
 
 export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetProps>(
-  function MealDetailSheet({ onEntryRemoved }, ref) {
+  function MealDetailSheet({ onEntryRemoved, onEditEntry }, ref) {
     const theme = useTheme();
     const { session } = useAuth();
     const sheetRef = useRef<BottomSheet>(null);
@@ -50,6 +54,7 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
     );
     const [entries, setEntries] = useState<FoodLogEntry[]>([]);
     const [loading, setLoading] = useState(false);
+    const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
 
     const loadEntries = useCallback(async (mealType: MealType) => {
       const userId = session?.user.id;
@@ -61,7 +66,7 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
       setLoading(true);
       const { data } = await supabase
         .from('food_logs')
-        .select('id, name, quantity_g, calories, carbs_g, protein_g, fat_g')
+        .select('id, name, quantity_g, calories, carbs_g, protein_g, fat_g, photo_path')
         .eq('user_id', userId)
         .eq('logged_date', todayIso())
         .eq('meal_type', mealType)
@@ -69,6 +74,33 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
       setEntries(data ?? []);
       setLoading(false);
     }, [session?.user.id]);
+
+    useEffect(() => {
+      const entriesWithPhotos = entries.filter((entry) => entry.photo_path);
+      if (entriesWithPhotos.length === 0) return;
+
+      let cancelled = false;
+      (async () => {
+        const resolved = await Promise.all(
+          entriesWithPhotos.map(async (entry) => {
+            const url = await getMealPhotoUrl(entry.photo_path!);
+            return [entry.id, url] as const;
+          })
+        );
+        if (cancelled) return;
+        setPhotoUrls((current) => {
+          const next = { ...current };
+          for (const [id, url] of resolved) {
+            if (url) next[id] = url;
+          }
+          return next;
+        });
+      })();
+
+      return () => {
+        cancelled = true;
+      };
+    }, [entries]);
 
     useImperativeHandle(ref, () => ({
       present: (nextMeal) => {
@@ -86,9 +118,28 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
       []
     );
 
+    function handleEdit(entry: FoodLogEntry) {
+      if (!meal) return;
+      sheetRef.current?.close();
+      onEditEntry?.({
+        id: entry.id,
+        mealType: meal.mealType,
+        name: entry.name,
+        quantity_g: entry.quantity_g,
+        calories: entry.calories,
+        carbs_g: entry.carbs_g,
+        protein_g: entry.protein_g,
+        fat_g: entry.fat_g,
+      });
+    }
+
     async function handleRemove(entryId: string) {
+      const removedEntry = entries.find((entry) => entry.id === entryId);
       setEntries((current) => current.filter((entry) => entry.id !== entryId));
       await supabase.from('food_logs').delete().eq('id', entryId);
+      if (removedEntry?.photo_path) {
+        await deleteMealPhoto(removedEntry.photo_path);
+      }
       onEntryRemoved?.();
     }
 
@@ -126,12 +177,22 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
                 </ThemedText>
               ) : (
                 entries.map((entry) => (
-                  <View
+                  <Pressable
                     key={entry.id}
-                    style={[
+                    onPress={() => handleEdit(entry)}
+                    style={({ pressed }) => [
                       styles.entryCard,
                       { backgroundColor: theme.backgroundElement, borderColor: theme.outlineVariant },
+                      pressed && styles.pressed,
                     ]}>
+                    {photoUrls[entry.id] ? (
+                      <Image
+                        source={{ uri: photoUrls[entry.id] }}
+                        style={styles.entryThumb}
+                        contentFit="cover"
+                      />
+                    ) : null}
+
                     <View style={styles.entryInfo}>
                       <ThemedText type="bodyLg">{entry.name}</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
@@ -144,7 +205,10 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
                     </View>
 
                     <Pressable
-                      onPress={() => handleRemove(entry.id)}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        handleRemove(entry.id);
+                      }}
                       style={({ pressed }) => [
                         styles.removeButton,
                         { backgroundColor: theme.surfaceContainerHighest },
@@ -156,7 +220,7 @@ export const MealDetailSheet = forwardRef<MealDetailSheetRef, MealDetailSheetPro
                         tintColor={theme.error}
                       />
                     </Pressable>
-                  </View>
+                  </Pressable>
                 ))
               )}
             </>
@@ -199,6 +263,11 @@ const styles = StyleSheet.create({
   entryInfo: {
     flex: 1,
     gap: Spacing.half,
+  },
+  entryThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: Radii.md,
   },
   removeButton: {
     width: 32,

@@ -4,6 +4,8 @@ import BottomSheet, {
   BottomSheetTextInput,
   BottomSheetView,
 } from '@gorhom/bottom-sheet';
+import { Image } from 'expo-image';
+import { SymbolView } from 'expo-symbols';
 import { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, TextInput, View } from 'react-native';
 
@@ -11,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Radii, Shadows, Spacing } from '@/constants/theme';
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
+import { uploadMealPhoto } from '@/lib/meal-photos';
 import { supabase } from '@/lib/supabase';
 
 // BottomSheetTextInput relies on TextInput.State.currentlyFocusedInput, which
@@ -26,8 +29,20 @@ const MEAL_OPTIONS: { value: MealType; label: string }[] = [
   { value: 'snack', label: 'Snacks' },
 ];
 
+export type EditableFoodEntry = {
+  id: string;
+  mealType: MealType;
+  name: string;
+  quantity_g: number;
+  calories: number;
+  carbs_g: number;
+  protein_g: number;
+  fat_g: number;
+};
+
 export type AddFoodEntrySheetRef = {
-  present: (mealType?: MealType) => void;
+  present: (mealType?: MealType, initialPhotoUri?: string) => void;
+  edit: (entry: EditableFoodEntry) => void;
   dismiss: () => void;
 };
 
@@ -52,7 +67,9 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
     const sheetRef = useRef<BottomSheet>(null);
     const snapPoints = useMemo(() => ['75%'], []);
 
+    const [editId, setEditId] = useState<string | null>(null);
     const [mealType, setMealType] = useState<MealType>('breakfast');
+    const [photoUri, setPhotoUri] = useState<string | null>(null);
     const [name, setName] = useState('');
     const [quantityG, setQuantityG] = useState('');
     const [calories, setCalories] = useState('');
@@ -62,7 +79,9 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
     const [error, setError] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
 
-    function reset() {
+    function reset(initialPhotoUri?: string) {
+      setEditId(null);
+      setPhotoUri(initialPhotoUri ?? null);
       setName('');
       setQuantityG('');
       setCalories('');
@@ -74,9 +93,21 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
     }
 
     useImperativeHandle(ref, () => ({
-      present: (initialMealType) => {
-        reset();
+      present: (initialMealType, initialPhotoUri) => {
+        reset(initialPhotoUri);
         setMealType(initialMealType ?? 'breakfast');
+        sheetRef.current?.expand();
+      },
+      edit: (entry) => {
+        reset();
+        setEditId(entry.id);
+        setMealType(entry.mealType);
+        setName(entry.name);
+        setQuantityG(String(entry.quantity_g));
+        setCalories(String(entry.calories));
+        setCarbsG(String(entry.carbs_g));
+        setProteinG(String(entry.protein_g));
+        setFatG(String(entry.fat_g));
         sheetRef.current?.expand();
       },
       dismiss: () => sheetRef.current?.close(),
@@ -115,9 +146,7 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
       setSubmitting(true);
       setError(null);
 
-      const { error: insertError } = await supabase.from('food_logs').insert({
-        user_id: userId,
-        logged_date: todayIso(),
+      const entryFields = {
         meal_type: mealType,
         name: name.trim(),
         quantity_g: quantity,
@@ -125,12 +154,38 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
         carbs_g: parseNumber(carbsG) || 0,
         protein_g: parseNumber(proteinG) || 0,
         fat_g: parseNumber(fatG) || 0,
-      });
+      };
+
+      let submitError: string | undefined;
+
+      if (editId) {
+        const { error: updateError } = await supabase.from('food_logs').update(entryFields).eq('id', editId);
+        submitError = updateError?.message;
+      } else {
+        let photoPath: string | null = null;
+        if (photoUri) {
+          try {
+            photoPath = await uploadMealPhoto(userId, photoUri);
+          } catch (uploadError) {
+            setSubmitting(false);
+            setError(uploadError instanceof Error ? uploadError.message : 'Could not upload photo.');
+            return;
+          }
+        }
+
+        const { error: insertError } = await supabase.from('food_logs').insert({
+          ...entryFields,
+          user_id: userId,
+          logged_date: todayIso(),
+          photo_path: photoPath,
+        });
+        submitError = insertError?.message;
+      }
 
       setSubmitting(false);
 
-      if (insertError) {
-        setError(insertError.message);
+      if (submitError) {
+        setError(submitError);
         return;
       }
 
@@ -149,8 +204,27 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
         handleIndicatorStyle={{ backgroundColor: theme.outlineVariant }}>
         <BottomSheetView style={styles.content}>
           <ThemedText type="headlineMd" style={styles.title}>
-            Log food
+            {editId ? 'Edit entry' : 'Log food'}
           </ThemedText>
+
+          {photoUri ? (
+            <View style={styles.photoPreviewWrap}>
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} contentFit="cover" />
+              <Pressable
+                onPress={() => setPhotoUri(null)}
+                style={({ pressed }) => [
+                  styles.photoRemoveButton,
+                  { backgroundColor: theme.surfaceContainerLowest },
+                  pressed && styles.pressed,
+                ]}>
+                <SymbolView
+                  name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                  size={14}
+                  tintColor={theme.text}
+                />
+              </Pressable>
+            </View>
+          ) : null}
 
           <View style={styles.mealRow}>
             {MEAL_OPTIONS.map((option) => {
@@ -294,7 +368,7 @@ export const AddFoodEntrySheet = forwardRef<AddFoodEntrySheetRef, AddFoodEntrySh
               (pressed || submitting) && styles.pressed,
             ]}>
             <ThemedText type="labelLg" style={{ color: theme.onPrimary }}>
-              {submitting ? 'Saving…' : 'Add entry'}
+              {submitting ? 'Saving…' : editId ? 'Save changes' : 'Add entry'}
             </ThemedText>
           </Pressable>
         </BottomSheetView>
@@ -312,6 +386,24 @@ const styles = StyleSheet.create({
   },
   title: {
     marginBottom: Spacing.one,
+  },
+  photoPreviewWrap: {
+    position: 'relative',
+  },
+  photoPreview: {
+    width: '100%',
+    height: 160,
+    borderRadius: Radii.lg,
+  },
+  photoRemoveButton: {
+    position: 'absolute',
+    top: Spacing.two,
+    right: Spacing.two,
+    width: 28,
+    height: 28,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   mealRow: {
     flexDirection: 'row',
