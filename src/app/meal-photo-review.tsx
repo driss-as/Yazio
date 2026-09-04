@@ -1,8 +1,19 @@
+import { BlurView } from 'expo-blur';
 import { Image } from 'expo-image';
 import { router, useLocalSearchParams } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SymbolView } from 'expo-symbols';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { MealType } from '@/components/add-food-entry-sheet';
@@ -240,7 +251,10 @@ export default function MealPhotoReviewScreen() {
           </View>
 
           {url ? (
-            <Image source={{ uri: url }} style={styles.image} contentFit="cover" />
+            <View style={styles.imageWrapper}>
+              <Image source={{ uri: url }} style={styles.image} contentFit="cover" />
+              {analyzing ? <MagicScanOverlay tint={theme.primary} /> : null}
+            </View>
           ) : (
             <ThemedText type="bodyMd" themeColor="textSecondary">
               Loading photo…
@@ -418,6 +432,109 @@ export default function MealPhotoReviewScreen() {
   );
 }
 
+const SPARKLE_POSITIONS: { top: `${number}%`; left: `${number}%` }[] = [
+  { top: '15%', left: '18%' },
+  { top: '62%', left: '72%' },
+  { top: '38%', left: '52%' },
+  { top: '78%', left: '22%' },
+  { top: '22%', left: '78%' },
+];
+
+function MagicScanOverlay({ tint }: { tint: string }) {
+  const scanY = useSharedValue(-12);
+  const shimmerX = useSharedValue(-60);
+  const glow = useSharedValue(0.35);
+
+  useEffect(() => {
+    scanY.value = withRepeat(
+      withTiming(112, { duration: 1500, easing: Easing.inOut(Easing.quad) }),
+      -1,
+      true
+    );
+    shimmerX.value = withRepeat(withTiming(140, { duration: 2200, easing: Easing.linear }), -1, false);
+    glow.value = withRepeat(withTiming(1, { duration: 900, easing: Easing.inOut(Easing.sin) }), -1, true);
+  }, [scanY, shimmerX, glow]);
+
+  const scanLineStyle = useAnimatedStyle(() => ({ top: `${scanY.value}%` }));
+  const shimmerStyle = useAnimatedStyle(() => ({ left: `${shimmerX.value}%` }));
+  const glowStyle = useAnimatedStyle(() => ({ opacity: glow.value }));
+
+  return (
+    <View style={styles.magicOverlay} pointerEvents="none">
+      <BlurView intensity={18} tint="dark" style={StyleSheet.absoluteFill} />
+
+      <Animated.View style={[styles.shimmerBand, shimmerStyle]}>
+        <LinearGradient
+          colors={['transparent', 'rgba(255,255,255,0.55)', 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+
+      <Animated.View style={[styles.scanLine, scanLineStyle]}>
+        <LinearGradient
+          colors={['transparent', tint, 'transparent']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 0 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+
+      <Animated.View style={[styles.magicBorder, { borderColor: tint }, glowStyle]} />
+
+      {SPARKLE_POSITIONS.map((position, index) => (
+        <Sparkle key={index} position={position} delay={index * 260} color={tint} />
+      ))}
+
+      <View style={styles.magicLabel}>
+        <SymbolView
+          name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+          size={16}
+          tintColor="#fff"
+        />
+        <ThemedText type="labelLg" style={styles.magicLabelText}>
+          Analyse magique en cours…
+        </ThemedText>
+      </View>
+    </View>
+  );
+}
+
+function Sparkle({
+  position,
+  delay,
+  color,
+}: {
+  position: { top: `${number}%`; left: `${number}%` };
+  delay: number;
+  color: string;
+}) {
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withDelay(
+      delay,
+      withRepeat(withSequence(withTiming(1, { duration: 700 }), withTiming(0, { duration: 700 })), -1, false)
+    );
+  }, [progress, delay]);
+
+  const style = useAnimatedStyle(() => ({
+    opacity: progress.value,
+    transform: [{ scale: 0.6 + progress.value * 0.6 }],
+  }));
+
+  return (
+    <Animated.View style={[styles.sparkle, position, style]}>
+      <SymbolView
+        name={{ ios: 'sparkle', android: 'auto_awesome', web: 'auto_awesome' }}
+        size={14}
+        tintColor={color}
+      />
+    </Animated.View>
+  );
+}
+
 function Field({
   label,
   value,
@@ -485,10 +602,63 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.7,
   },
-  image: {
+  imageWrapper: {
     width: '100%',
     aspectRatio: 1,
     borderRadius: Radii.lg,
+    overflow: 'hidden',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  magicOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    overflow: 'hidden',
+  },
+  shimmerBand: {
+    position: 'absolute',
+    top: '-40%',
+    width: '55%',
+    height: '180%',
+    transform: [{ rotate: '-20deg' }],
+  },
+  scanLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 3,
+  },
+  magicBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderWidth: 2,
+    borderRadius: Radii.lg,
+  },
+  sparkle: {
+    position: 'absolute',
+  },
+  magicLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.one,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    borderRadius: Radii.full,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    marginBottom: Spacing.three,
+  },
+  magicLabelText: {
+    color: '#fff',
   },
   analyzeButton: {
     flexDirection: 'row',
