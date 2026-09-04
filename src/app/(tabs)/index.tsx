@@ -21,6 +21,7 @@ import {
 import { useAuth } from '@/context/auth-context';
 import { useTheme } from '@/hooks/use-theme';
 import { useNutritionTracker } from '@/hooks/use-nutrition-tracker';
+import { usePremiumStatus } from '@/hooks/use-premium-status';
 import { useWaterTracker } from '@/hooks/use-water-tracker';
 import { uploadMealPhoto } from '@/lib/meal-photos';
 import { supabase } from '@/lib/supabase';
@@ -64,11 +65,13 @@ export default function DiaryScreen() {
   const mealDetailSheetRef = useRef<MealDetailSheetRef>(null);
   const photoSourceSheetRef = useRef<PhotoSourceSheetRef>(null);
   const nutrition = useNutritionTracker();
+  const premium = usePremiumStatus();
 
   useFocusEffect(
     useCallback(() => {
       nutrition.refresh();
-    }, [nutrition.refresh])
+      premium.refresh();
+    }, [nutrition.refresh, premium.refresh])
   );
 
   const caloriesRemaining = Math.max(
@@ -298,7 +301,13 @@ export default function DiaryScreen() {
       </ScrollView>
 
       <Pressable
-        onPress={() => photoSourceSheetRef.current?.present()}
+        onPress={() => {
+          if (!premium.isPremium) {
+            router.push('/premium');
+            return;
+          }
+          photoSourceSheetRef.current?.present();
+        }}
         style={({ pressed }) => [
           styles.fab,
           styles.photoFab,
@@ -315,6 +324,15 @@ export default function DiaryScreen() {
           size={22}
           tintColor={theme.text}
         />
+        {!premium.isPremium ? (
+          <View style={[styles.photoFabLock, { backgroundColor: theme.primary }]}>
+            <SymbolView
+              name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
+              size={10}
+              tintColor={theme.onPrimary}
+            />
+          </View>
+        ) : null}
       </Pressable>
 
       <Pressable
@@ -816,5 +834,15 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderWidth: StyleSheet.hairlineWidth,
+  },
+  photoFabLock: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 18,
+    height: 18,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

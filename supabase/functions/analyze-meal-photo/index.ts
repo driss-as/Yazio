@@ -98,6 +98,19 @@ Deno.serve(async (req: Request) => {
     return jsonResponse({ error: "Not authenticated" }, 401);
   }
 
+  const { data: profile } = await callerClient
+    .from("profiles")
+    .select("is_premium")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+
+  if (!profile?.is_premium) {
+    return jsonResponse(
+      { error: "Meal photo analysis is a Premium feature", code: "premium_required" },
+      402,
+    );
+  }
+
   if (!photoPath.startsWith(`${userData.user.id}/`)) {
     return jsonResponse({ error: "You don't have access to this photo" }, 403);
   }

@@ -1,5 +1,7 @@
+import { router } from 'expo-router';
+import { useFocusEffect } from 'expo-router/react-navigation';
 import { SymbolView } from 'expo-symbols';
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Image, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -9,6 +11,7 @@ import { RecipeDetailSheet, type RecipeDetailSheetRef } from '@/components/recip
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, MaxContentWidth, Radii, Shadows, Spacing } from '@/constants/theme';
 import { type FoodItem, useFoodCatalog } from '@/hooks/use-food-catalog';
+import { usePremiumStatus } from '@/hooks/use-premium-status';
 import { type RecipeItem, useRecipeCatalog } from '@/hooks/use-recipe-catalog';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -19,10 +22,32 @@ const SECTIONS: { value: Section; label: string }[] = [
   { value: 'recipes', label: 'Recettes' },
 ];
 
+// Free accounts only see the first page in full; from page 2 onward, most
+// results are locked behind Premium to encourage upgrading.
+const PAGE_SIZE = 10;
+const FREE_UNLOCK_RATIO = 0.4;
+
+function paginate<T>(items: T[], page: number) {
+  return items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+}
+
+function unlockedCountFor(pageItemsLength: number, page: number, isPremium: boolean) {
+  if (isPremium || page === 1) return pageItemsLength;
+  return Math.ceil(pageItemsLength * FREE_UNLOCK_RATIO);
+}
+
 export default function DatabaseScreen() {
   const theme = useTheme();
   const catalog = useFoodCatalog();
   const recipeCatalog = useRecipeCatalog();
+  const premium = usePremiumStatus();
+
+  useFocusEffect(
+    useCallback(() => {
+      premium.refresh();
+    }, [premium.refresh])
+  );
+
   const addSheetRef = useRef<AddFoodCatalogSheetRef>(null);
   const detailSheetRef = useRef<FoodDetailSheetRef>(null);
   const recipeDetailSheetRef = useRef<RecipeDetailSheetRef>(null);
@@ -83,10 +108,15 @@ export default function DatabaseScreen() {
           </View>
 
           {section === 'foods' ? (
-            <FoodsSection catalog={catalog} onSelectFood={(food) => detailSheetRef.current?.present(food)} />
+            <FoodsSection
+              catalog={catalog}
+              isPremium={premium.isPremium}
+              onSelectFood={(food) => detailSheetRef.current?.present(food)}
+            />
           ) : (
             <RecipesSection
               catalog={recipeCatalog}
+              isPremium={premium.isPremium}
               onSelectRecipe={(recipe) => recipeDetailSheetRef.current?.present(recipe)}
             />
           )}
@@ -119,12 +149,23 @@ export default function DatabaseScreen() {
 
 function FoodsSection({
   catalog,
+  isPremium,
   onSelectFood,
 }: {
   catalog: ReturnType<typeof useFoodCatalog>;
+  isPremium: boolean;
   onSelectFood: (food: FoodItem) => void;
 }) {
   const theme = useTheme();
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [catalog.query]);
+
+  const totalPages = Math.max(1, Math.ceil(catalog.foods.length / PAGE_SIZE));
+  const pageItems = paginate(catalog.foods, page);
+  const unlockedCount = unlockedCountFor(pageItems.length, page, isPremium);
 
   return (
     <>
@@ -168,16 +209,26 @@ function FoodsSection({
           </ThemedText>
         </View>
       ) : (
-        <View style={[styles.card, { backgroundColor: theme.surfaceContainerLowest }, Shadows.soft]}>
-          {catalog.foods.map((food, index) => (
-            <FoodRow
-              key={food.id}
-              food={food}
-              isLast={index === catalog.foods.length - 1}
-              onPress={() => onSelectFood(food)}
-            />
-          ))}
-        </View>
+        <>
+          <View style={[styles.card, { backgroundColor: theme.surfaceContainerLowest }, Shadows.soft]}>
+            {pageItems.map((food, index) =>
+              index < unlockedCount ? (
+                <FoodRow
+                  key={food.id}
+                  food={food}
+                  isLast={index === pageItems.length - 1}
+                  onPress={() => onSelectFood(food)}
+                />
+              ) : (
+                <LockedRow key={food.id} isLast={index === pageItems.length - 1} />
+              )
+            )}
+          </View>
+
+          {unlockedCount < pageItems.length ? <PremiumUnlockBanner /> : null}
+
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </>
   );
@@ -185,12 +236,23 @@ function FoodsSection({
 
 function RecipesSection({
   catalog,
+  isPremium,
   onSelectRecipe,
 }: {
   catalog: ReturnType<typeof useRecipeCatalog>;
+  isPremium: boolean;
   onSelectRecipe: (recipe: RecipeItem) => void;
 }) {
   const theme = useTheme();
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [catalog.query]);
+
+  const totalPages = Math.max(1, Math.ceil(catalog.recipes.length / PAGE_SIZE));
+  const pageItems = paginate(catalog.recipes, page);
+  const unlockedCount = unlockedCountFor(pageItems.length, page, isPremium);
 
   return (
     <>
@@ -234,18 +296,137 @@ function RecipesSection({
           </ThemedText>
         </View>
       ) : (
-        <View style={[styles.card, { backgroundColor: theme.surfaceContainerLowest }, Shadows.soft]}>
-          {catalog.recipes.map((recipe, index) => (
-            <RecipeRow
-              key={recipe.id}
-              recipe={recipe}
-              isLast={index === catalog.recipes.length - 1}
-              onPress={() => onSelectRecipe(recipe)}
-            />
-          ))}
-        </View>
+        <>
+          <View style={[styles.card, { backgroundColor: theme.surfaceContainerLowest }, Shadows.soft]}>
+            {pageItems.map((recipe, index) =>
+              index < unlockedCount ? (
+                <RecipeRow
+                  key={recipe.id}
+                  recipe={recipe}
+                  isLast={index === pageItems.length - 1}
+                  onPress={() => onSelectRecipe(recipe)}
+                />
+              ) : (
+                <LockedRow key={recipe.id} isLast={index === pageItems.length - 1} />
+              )
+            )}
+          </View>
+
+          {unlockedCount < pageItems.length ? <PremiumUnlockBanner /> : null}
+
+          <Pagination page={page} totalPages={totalPages} onChange={setPage} />
+        </>
       )}
     </>
+  );
+}
+
+function LockedRow({ isLast }: { isLast: boolean }) {
+  const theme = useTheme();
+
+  return (
+    <Pressable
+      onPress={() => router.push('/premium')}
+      style={({ pressed }) => [
+        styles.foodRow,
+        !isLast && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.outlineVariant },
+        pressed && styles.pressed,
+      ]}>
+      <View style={[styles.foodIcon, { backgroundColor: theme.backgroundElement }]}>
+        <SymbolView
+          name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }}
+          size={16}
+          tintColor={theme.textSecondary}
+        />
+      </View>
+
+      <View style={styles.foodInfo}>
+        <ThemedText type="bodyLg" themeColor="textSecondary" style={styles.lockedLabel}>
+          Résultat Premium
+        </ThemedText>
+      </View>
+
+      <SymbolView
+        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+        size={16}
+        tintColor={theme.outline}
+      />
+    </Pressable>
+  );
+}
+
+function PremiumUnlockBanner() {
+  const theme = useTheme();
+
+  return (
+    <Pressable
+      onPress={() => router.push('/premium')}
+      style={({ pressed }) => [
+        styles.premiumBanner,
+        { backgroundColor: theme.primaryContainer },
+        pressed && styles.pressed,
+      ]}>
+      <SymbolView
+        name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+        size={16}
+        tintColor={theme.onPrimaryContainer}
+      />
+      <ThemedText type="small" style={[styles.premiumBannerText, { color: theme.onPrimaryContainer }]}>
+        Passez Premium pour voir tous les résultats
+      </ThemedText>
+    </Pressable>
+  );
+}
+
+function Pagination({
+  page,
+  totalPages,
+  onChange,
+}: {
+  page: number;
+  totalPages: number;
+  onChange: (page: number) => void;
+}) {
+  const theme = useTheme();
+
+  if (totalPages <= 1) return null;
+
+  return (
+    <View style={styles.pagination}>
+      <Pressable
+        onPress={() => onChange(Math.max(1, page - 1))}
+        disabled={page === 1}
+        style={({ pressed }) => [
+          styles.paginationButton,
+          { backgroundColor: theme.backgroundElement },
+          (pressed || page === 1) && styles.pressed,
+        ]}>
+        <SymbolView
+          name={{ ios: 'chevron.left', android: 'chevron_left', web: 'chevron_left' }}
+          size={16}
+          tintColor={theme.text}
+        />
+      </Pressable>
+
+      <ThemedText type="labelLg" themeColor="textSecondary">
+        Page {page} / {totalPages}
+      </ThemedText>
+
+      <Pressable
+        onPress={() => onChange(Math.min(totalPages, page + 1))}
+        disabled={page === totalPages}
+        style={({ pressed }) => [
+          styles.paginationButton,
+          { backgroundColor: theme.backgroundElement },
+          (pressed || page === totalPages) && styles.pressed,
+        ]}>
+        <SymbolView
+          name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+          size={16}
+          tintColor={theme.text}
+        />
+      </Pressable>
+    </View>
   );
 }
 
@@ -446,5 +627,34 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  lockedLabel: {
+    fontStyle: 'italic',
+  },
+  premiumBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.two,
+    borderRadius: Radii.lg,
+    padding: Spacing.three,
+    marginTop: Spacing.three,
+  },
+  premiumBannerText: {
+    textAlign: 'center',
+  },
+  pagination: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.three,
+    marginTop: Spacing.three,
+  },
+  paginationButton: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

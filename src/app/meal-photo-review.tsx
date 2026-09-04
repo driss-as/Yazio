@@ -51,6 +51,7 @@ export default function MealPhotoReviewScreen() {
 
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState<string | null>(null);
+  const [premiumRequired, setPremiumRequired] = useState(false);
 
   const [mealType, setMealType] = useState<MealType>('breakfast');
   const [name, setName] = useState('');
@@ -103,6 +104,7 @@ export default function MealPhotoReviewScreen() {
     if (!photoPath) return;
     setAnalyzing(true);
     setAnalyzeError(null);
+    setPremiumRequired(false);
 
     const { data, error } = await supabase.functions.invoke<{ estimate: NutritionEstimate }>(
       'analyze-meal-photo',
@@ -112,7 +114,24 @@ export default function MealPhotoReviewScreen() {
     setAnalyzing(false);
 
     if (error || !data?.estimate) {
-      setAnalyzeError(error?.message ?? 'Could not analyze this photo.');
+      let code: string | undefined;
+      let message = error?.message;
+
+      if (error && 'context' in error && error.context instanceof Response) {
+        try {
+          const body = await error.context.clone().json();
+          code = body?.code;
+          message = body?.error ?? message;
+        } catch {
+          // ignore, fall back to error.message
+        }
+      }
+
+      if (code === 'premium_required') {
+        setPremiumRequired(true);
+      } else {
+        setAnalyzeError(message ?? 'Could not analyze this photo.');
+      }
       return;
     }
 
@@ -250,6 +269,37 @@ export default function MealPhotoReviewScreen() {
               {analyzing ? 'Analyzing…' : 'Analyze nutrition'}
             </ThemedText>
           </Pressable>
+
+          {premiumRequired ? (
+            <View
+              style={[
+                styles.card,
+                styles.premiumCard,
+                { backgroundColor: theme.primaryContainer },
+              ]}>
+              <SymbolView
+                name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                size={20}
+                tintColor={theme.onPrimaryContainer}
+              />
+              <ThemedText
+                type="bodyMd"
+                style={[styles.premiumCardText, { color: theme.onPrimaryContainer }]}>
+                L’analyse IA des photos est une fonctionnalité Premium.
+              </ThemedText>
+              <Pressable
+                onPress={() => router.push('/premium')}
+                style={({ pressed }) => [
+                  styles.premiumCardButton,
+                  { backgroundColor: theme.primary },
+                  pressed && styles.pressed,
+                ]}>
+                <ThemedText type="labelLg" style={{ color: theme.onPrimary }}>
+                  Passer Premium
+                </ThemedText>
+              </Pressable>
+            </View>
+          ) : null}
 
           {analyzeError ? (
             <ThemedText type="bodyMd" themeColor="error">
@@ -453,6 +503,20 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.four,
     gap: Spacing.three,
+  },
+  premiumCard: {
+    borderWidth: 0,
+    alignItems: 'center',
+  },
+  premiumCardText: {
+    textAlign: 'center',
+  },
+  premiumCardButton: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.three,
+    borderRadius: Radii.full,
   },
   mealRow: {
     flexDirection: 'row',

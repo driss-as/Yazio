@@ -21,6 +21,7 @@ import {
 import { useAuth } from '@/context/auth-context';
 import { useBodyMetrics } from '@/hooks/use-body-metrics';
 import { useMealPhotos } from '@/hooks/use-meal-photos';
+import { usePremiumStatus } from '@/hooks/use-premium-status';
 import { useTheme } from '@/hooks/use-theme';
 
 type Stat = { label: string; value: string; unit?: string };
@@ -65,12 +66,14 @@ export default function ProfileScreen() {
   const { signOut } = useAuth();
   const metrics = useBodyMetrics();
   const { photos, loading: photosLoading, refresh: refreshPhotos } = useMealPhotos();
+  const premium = usePremiumStatus();
   const photoDetailSheetRef = useRef<MealPhotoDetailSheetRef>(null);
 
   useFocusEffect(
     useCallback(() => {
       refreshPhotos();
-    }, [refreshPhotos])
+      premium.refresh();
+    }, [refreshPhotos, premium.refresh])
   );
   const bmi = metrics.currentWeightKg / (metrics.heightCm / 100) ** 2;
   const weightProgress = Math.min(
@@ -114,6 +117,8 @@ export default function ProfileScreen() {
         contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
         <View style={styles.page}>
           <Header />
+
+          <PremiumBanner isPremium={premium.isPremium} />
 
           <Section title="Goals">
             <View
@@ -295,6 +300,84 @@ function Header() {
   );
 }
 
+function PremiumBanner({ isPremium }: { isPremium: boolean }) {
+  const theme = useTheme();
+
+  if (isPremium) {
+    return (
+      <Pressable
+        onPress={() => router.push('/premium')}
+        style={({ pressed }) => [
+          styles.premiumBanner,
+          { backgroundColor: theme.surfaceContainerLowest, borderColor: theme.outlineVariant, borderWidth: StyleSheet.hairlineWidth },
+          Shadows.soft,
+          pressed && styles.pressed,
+        ]}>
+        <View style={[styles.premiumIcon, { backgroundColor: theme.primary }]}>
+          <SymbolView
+            name={{ ios: 'checkmark.seal.fill', android: 'verified', web: 'verified' }}
+            size={18}
+            tintColor={theme.onPrimary}
+          />
+        </View>
+
+        <View style={styles.premiumInfo}>
+          <View style={styles.premiumActiveTitleRow}>
+            <ThemedText type="labelLg">Yazio Premium</ThemedText>
+            <View style={[styles.premiumBadge, { backgroundColor: theme.primaryContainer }]}>
+              <ThemedText type="small" style={{ color: theme.onPrimaryContainer }}>
+                Actif
+              </ThemedText>
+            </View>
+          </View>
+          <ThemedText type="small" themeColor="textSecondary">
+            Merci de votre soutien — gérer mon abonnement
+          </ThemedText>
+        </View>
+
+        <SymbolView
+          name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+          size={16}
+          tintColor={theme.outline}
+        />
+      </Pressable>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={() => router.push('/premium')}
+      style={({ pressed }) => [
+        styles.premiumBanner,
+        { backgroundColor: theme.primaryContainer },
+        pressed && styles.pressed,
+      ]}>
+      <View style={[styles.premiumIcon, { backgroundColor: theme.primary }]}>
+        <SymbolView
+          name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+          size={18}
+          tintColor={theme.onPrimary}
+        />
+      </View>
+
+      <View style={styles.premiumInfo}>
+        <ThemedText type="labelLg" style={{ color: theme.onPrimaryContainer }}>
+          Passer Premium
+        </ThemedText>
+        <ThemedText type="small" style={{ color: theme.onPrimaryContainer }}>
+          Débloquez toutes les fonctionnalités de yazio
+        </ThemedText>
+      </View>
+
+      <SymbolView
+        name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }}
+        size={16}
+        tintColor={theme.onPrimaryContainer}
+      />
+    </Pressable>
+  );
+}
+
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <View style={styles.section}>
@@ -401,6 +484,35 @@ const styles = StyleSheet.create({
   },
   pressed: {
     opacity: 0.7,
+  },
+  premiumBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.three,
+    borderRadius: Radii.lg,
+    padding: Spacing.three,
+    marginBottom: Spacing.four,
+  },
+  premiumIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: Radii.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  premiumInfo: {
+    flex: 1,
+    gap: Spacing.half,
+  },
+  premiumActiveTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  premiumBadge: {
+    borderRadius: Radii.full,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
   },
   section: {
     marginBottom: Spacing.four,
