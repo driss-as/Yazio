@@ -1,56 +1,57 @@
-# Welcome to your Expo app 👋
+# Yazio — Projet de formation Studio IA
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Cette application est un projet pédagogique développé dans le cadre de la formation **Studio IA** :
+👉 https://formation.drissas.com/studio-ia
 
-## Get started
+Elle sert de cas pratique pour illustrer, de bout en bout, la construction d'une app mobile moderne (React Native / Expo) assistée par l'IA : suivi nutritionnel, authentification, analyse de repas par photo (IA), et abonnements premium (RevenueCat), le tout backé par Supabase.
 
-1. Install dependencies
+## Stack technique
+
+- [Expo](https://expo.dev) (React Native) avec [file-based routing](https://docs.expo.dev/router/introduction)
+- [Supabase](https://supabase.com) — auth, base de données, Edge Functions
+- [RevenueCat](https://www.revenuecat.com) — gestion des abonnements premium
+
+## Démarrer le projet
+
+1. Installer les dépendances
 
    ```bash
    npm install
    ```
 
-2. Start the app
+2. Copier le fichier d'environnement et renseigner tes propres clés
+
+   ```bash
+   cp .env.example .env
+   ```
+
+3. Lancer l'app
 
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+Dans la sortie de la commande, tu trouveras des options pour ouvrir l'app dans :
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+- un [development build](https://docs.expo.dev/develop/development-builds/introduction/)
+- un émulateur [Android](https://docs.expo.dev/workflow/android-studio-emulator/)
+- un simulateur [iOS](https://docs.expo.dev/workflow/ios-simulator/)
+- [Expo Go](https://expo.dev/go), un bac à sable limité pour essayer rapidement l'app
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+Le code de l'application se trouve dans le dossier **src/app**.
 
-## Get a fresh project
+## Pour aller plus loin
 
-When you're ready, run:
+Ce dépôt est utilisé comme support de cours dans la formation **Studio IA** de Driss AS, où sont abordés :
 
-```bash
-npm run reset-project
-```
+- la conception d'une app mobile avec l'aide d'un agent IA (Claude Code)
+- l'intégration d'un backend Supabase (auth, base de données, Edge Functions)
+- l'ajout de fonctionnalités IA (analyse d'image de repas)
+- la mise en place d'abonnements payants avec RevenueCat
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Plus d'informations et inscription à la formation : https://formation.drissas.com/studio-ia
 
-### Other setup steps
+## Ressources Expo
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- [Documentation Expo](https://docs.expo.dev/)
+- [Tutoriel Expo](https://docs.expo.dev/tutorial/introduction/)
